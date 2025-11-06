@@ -169,12 +169,13 @@ if ($conn->connect_error) {
     exit;
 }
 
-$conn->query("SET time_zone = '+05:30'");
+// SET TO UK TIMEZONE (automatically handles BST/GMT)
+$conn->query("SET time_zone = 'Europe/London'");
 
 // Collect form data (matching contact.html field names)
 $name = isset($_POST["name"]) ? strip_tags(trim($_POST["name"])) : "";
 $email = isset($_POST["email"]) ? filter_var(trim($_POST["email"]), FILTER_SANITIZE_EMAIL) : "";
-$phone = isset($_POST["phone"]) ? strip_tags(trim($_POST["phone"])) : "";
+$phone = isset($_POST["full_phone"]) ? strip_tags(trim($_POST["full_phone"])) : "";
 $vehicle = isset($_POST["vehicle"]) ? strip_tags(trim($_POST["vehicle"])) : "";
 $service = isset($_POST["service"]) ? strip_tags(trim($_POST["service"])) : "";
 $date = isset($_POST["date"]) ? trim($_POST["date"]) : ""; // ISO datetime-local string, e.g., "2025-11-03T12:00"
@@ -188,10 +189,11 @@ $preferred_date = !empty($date) ? date('Y-m-d H:i:s', strtotime($date)) : null;
 if (!empty($honeypot)) {
     // Log bot attempt (connection still open here)
     $ip = $_SERVER['REMOTE_ADDR'];
+    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
     $honeypot_val = $honeypot;
     
     // Generate IST timestamp for bot log
-    $ist_now_bot = (new \DateTime('now', new \DateTimeZone('Asia/Kolkata')))->format('Y-m-d H:i:s');
+    $ist_now_bot = (new DateTime('now', new DateTimeZone('Europe/London')))->format('Y-m-d H:i:s');
     
     $log_sql = "INSERT INTO bot_attempts (ip_address, honeypot_value, attempted_at) VALUES (?, ?, ?)";
     $log_stmt = $conn->prepare($log_sql);
@@ -203,6 +205,26 @@ if (!empty($honeypot)) {
     
     // Fake success to not alert the bot, but don't store in main table
     echo json_encode(["status" => "success", "message" => "Message sent successfully!"]);
+    $conn->close();
+    exit;
+}
+
+// Basic server-side validation
+if (empty($name) || empty($email) || empty($phone) || empty($subject) || empty($service)) {
+    echo json_encode(["status" => "error", "message" => "All required fields must be filled."]);
+    $conn->close();
+    exit;
+}
+
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    echo json_encode(["status" => "error", "message" => "Invalid email address."]);
+    $conn->close();
+    exit;
+}
+
+// Optional: Validate phone (E.164 format)
+if (!preg_match('/^\+[1-9]\d{1,14}$/', $phone)) {
+    echo json_encode(["status" => "error", "message" => "Invalid phone number format."]);
     $conn->close();
     exit;
 }
